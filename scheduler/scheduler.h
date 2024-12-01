@@ -7,6 +7,7 @@
 #include <mutex>
 #include <vector>
 #include <functional>
+#include <queue>
 
 namespace sylar {
 
@@ -38,12 +39,12 @@ protected:
 public:	
 	// 添加任务到任务队列
     template <class FiberOrCb>
-    void scheduleLock(FiberOrCb fc, int thread = -1, int nice = 19) 
+    void scheduleLock(FiberOrCb fc, int nice = 19, int thread = -1) 
     {
     	bool need_tickle = false;
 		ScheduleTask task(fc, thread, nice);
 
-    	strategyInsert[FCFS](need_tickle, task);
+    	strategyInsert[m_strategy](need_tickle, task);
 
     	if(need_tickle)
     	{
@@ -130,17 +131,12 @@ private:
 
 	// 定义不同的调度策略处理函数
 	void fcfs_push(bool& need_tickle, ScheduleTask task);
-	
-	void rr_push(bool& need_tickle, ScheduleTask task) {
-		std::cout << "Executing RR" << std::endl;
-	}
 
-	void ps_push(bool& need_tickle, ScheduleTask task) {
-		std::cout << "Executing PS" << std::endl;
-	}
+	void ps_push(bool& need_tickle, ScheduleTask task);
 	
 	void fcfs_consume(bool& need_tickle, ScheduleTask& task, int thread_id);
 
+	void ps_consume(bool& need_tickle, ScheduleTask& task, int thread_id);
 
 	std::function<void(bool&, ScheduleTask)> strategyInsert[3];
 
@@ -153,9 +149,19 @@ private:
 	std::mutex m_mutex;
 	// 线程池
 	std::vector<std::shared_ptr<Thread>> m_threads;
+
 	// 任务队列1，用于默认任务队列（FCFS）
 	std::vector<ScheduleTask> m_tasks;
-	
+
+    // 任务队列2：声明一个自定义类型的优先队列,用于优先级调度PS
+	struct compare {
+		bool operator()(ScheduleTask a, ScheduleTask b) {
+			return a.t_nice > b.t_nice; // 这里定义了小根堆
+		}
+	};
+	std::priority_queue<ScheduleTask, std::vector<ScheduleTask>, compare> m_tasks_ps;
+
+
 
 	// 存储工作线程的线程id
 	std::vector<int> m_threadIds;

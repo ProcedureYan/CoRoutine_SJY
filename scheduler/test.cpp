@@ -17,8 +17,8 @@ int main(int argc, char const *argv[])
 {
 	{
 		// 可以尝试把false 变为true 此时调度器所在线程也将加入工作线程
-		std::shared_ptr<Scheduler> scheduler = std::make_shared<Scheduler>(3, true, "scheduler_1");
-		
+		std::shared_ptr<Scheduler> scheduler = std::make_shared<Scheduler>(3, true, "scheduler_1","PS");
+		std::cout << "hello";
 		scheduler->start();
 
 		sleep(2);
@@ -27,7 +27,7 @@ int main(int argc, char const *argv[])
 		for(int i=0;i<5;i++)
 		{
 			std::shared_ptr<Fiber> fiber = std::make_shared<Fiber>(task);
-			scheduler->scheduleLock(fiber);
+			scheduler->scheduleLock(fiber, 10 - i);
 		}
 
 		sleep(6);
@@ -36,7 +36,7 @@ int main(int argc, char const *argv[])
 		for(int i=0;i<15;i++)
 		{
 			std::shared_ptr<Fiber> fiber = std::make_shared<Fiber>(task);
-			scheduler->scheduleLock(fiber);
+			scheduler->scheduleLock(fiber,15 - i);
 		}		
 
 		sleep(3);
