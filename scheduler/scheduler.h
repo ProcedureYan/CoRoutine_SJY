@@ -6,6 +6,7 @@
 
 #include <mutex>
 #include <vector>
+#include <functional>
 
 namespace sylar {
 
@@ -37,22 +38,13 @@ protected:
 public:	
 	// 添加任务到任务队列
     template <class FiberOrCb>
-    void scheduleLock(FiberOrCb fc, int thread = -1) 
+    void scheduleLock(FiberOrCb fc, int thread = -1, int nice = 19) 
     {
-    	bool need_tickle;
-    	{
-    		std::lock_guard<std::mutex> lock(m_mutex);
-    		
-			// 如果当前任务队列为空，调度器可能是休眠状态
-    		need_tickle = m_tasks.empty();
-	        
-	        ScheduleTask task(fc, thread);
-	        if (task.fiber || task.cb) 
-	        {
-	            m_tasks.push_back(task);
-	        }
-    	}
-    	
+    	bool need_tickle = false;
+		ScheduleTask task(fc, thread, nice);
+
+    	strategyInsert[FCFS](need_tickle, task);
+
     	if(need_tickle)
     	{
     		tickle();
@@ -89,32 +81,39 @@ private:
 		std::function<void()> cb;
 		int thread; // 指定任务需要运行的线程id
 
+		int t_nice; // 协程优先级，数字越小优先级越高，范围：[-20, 19]
+
 		ScheduleTask()
 		{
 			fiber = nullptr;
 			cb = nullptr;
 			thread = -1;
+			t_nice = 19;
 		}
 
-		ScheduleTask(std::shared_ptr<Fiber> f, int thr)
+		ScheduleTask(std::shared_ptr<Fiber> f, int thr,int nice = 19):
+		t_nice(nice)
 		{
 			fiber = f;
 			thread = thr;
 		}
 
-		ScheduleTask(std::shared_ptr<Fiber>* f, int thr)
+		ScheduleTask(std::shared_ptr<Fiber>* f, int thr,int nice = 19):
+		t_nice(nice)
 		{
 			fiber.swap(*f);
 			thread = thr;
 		}	
 
-		ScheduleTask(std::function<void()> f, int thr)
+		ScheduleTask(std::function<void()> f, int thr,int nice = 19):
+		t_nice(nice)
 		{
 			cb = f;
 			thread = thr;
 		}		
 
-		ScheduleTask(std::function<void()>* f, int thr)
+		ScheduleTask(std::function<void()>* f, int thr,int nice = 19):
+		t_nice(nice)
 		{
 			cb.swap(*f);
 			thread = thr;
@@ -125,8 +124,28 @@ private:
 			fiber = nullptr;
 			cb = nullptr;
 			thread = -1;
-		}	
+			t_nice = 19;
+		}
 	};
+
+	// 定义不同的调度策略处理函数
+	void fcfs_push(bool& need_tickle, ScheduleTask task);
+	
+	void rr_push(bool& need_tickle, ScheduleTask task) {
+		std::cout << "Executing RR" << std::endl;
+	}
+
+	void ps_push(bool& need_tickle, ScheduleTask task) {
+		std::cout << "Executing PS" << std::endl;
+	}
+	
+	void fcfs_consume(bool& need_tickle, ScheduleTask& task, int thread_id);
+
+
+	std::function<void(bool&, ScheduleTask)> strategyInsert[3];
+
+	std::function<void(bool&, ScheduleTask&, int)> strategyConsume[3];
+
 
 private:
 	std::string m_name;
@@ -134,8 +153,10 @@ private:
 	std::mutex m_mutex;
 	// 线程池
 	std::vector<std::shared_ptr<Thread>> m_threads;
-	// 任务队列
+	// 任务队列1，用于默认任务队列（FCFS）
 	std::vector<ScheduleTask> m_tasks;
+	
+
 	// 存储工作线程的线程id
 	std::vector<int> m_threadIds;
 	// 需要额外创建的线程数

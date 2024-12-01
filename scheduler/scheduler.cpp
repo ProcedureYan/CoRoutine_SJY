@@ -19,10 +19,25 @@ void Scheduler::SetThis()
 void Scheduler::SetStrategy(const std::string& strategy){
 	if(strategy == "FCFS"){
 		m_strategy = FCFS;
+		
 	}else if(strategy == "RR"){
 		m_strategy = RR;
+
+	}else if(strategy == "PS"){
+		m_strategy = PS;
 	}else{
-		std::cout << "Please enter the specified options: FCFS, RR" << std::endl;
+		std::cout << "Please enter the specified options: FCFS, RR, PS" << std::endl;
+	}
+}
+
+void Scheduler::fcfs_push(bool& need_tickle, Scheduler::ScheduleTask task) {
+	std::cout << "fcfs" << std::endl;
+	std::lock_guard<std::mutex> lock(m_mutex);
+	// 如果当前任务队列为空，调度器可能是休眠状态
+	need_tickle = m_tasks.empty();
+	if (task.fiber || task.cb) 
+	{
+		m_tasks.push_back(task);
 	}
 }
 
@@ -35,7 +50,14 @@ m_useCaller(use_caller), m_name(name)
 
 	Thread::SetName(m_name);
 
+	strategyInsert[FCFS] = [this](bool& need_tickle, ScheduleTask task) { fcfs_push(need_tickle, task); };
+	strategyInsert[RR] = [this](bool& need_tickle, ScheduleTask task) { rr_push(need_tickle, task); };
+	strategyInsert[PS] = [this](bool& need_tickle, ScheduleTask task) { ps_push(need_tickle, task); };
+
+	strategyConsume[FCFS] = [this](bool& tickle_me, ScheduleTask& task,int thread_id) { fcfs_consume(tickle_me, task, thread_id); };
+
 	SetStrategy(strategy);
+
 
 	// 是否使用主线程当作工作线程
 	if(use_caller)
@@ -88,7 +110,29 @@ void Scheduler::start()
 	if(debug) std::cout << "Scheduler::start() success\n";
 }
 
+void Scheduler::fcfs_consume(bool& tickle_me, ScheduleTask& task, int thread_id){
+	std::lock_guard<std::mutex> lock(m_mutex);
+	auto it = m_tasks.begin();
+	// 1 遍历任务队列
+	while(it!=m_tasks.end())
+	{
+		if(it->thread != -1 && it->thread != thread_id)
+		{
+			it++;
+			tickle_me = true;
+			continue;
+		}
 
+		// 2 取出任务
+		assert(it->fiber||it->cb);
+		std::cout << "FCFS 执行" << std::endl;
+		task = *it;
+		m_tasks.erase(it); 
+		m_activeThreadCount++;
+		break;
+	}	
+	tickle_me = tickle_me || (it != m_tasks.end());
+}
 
 void Scheduler::run()
 {
@@ -110,30 +154,7 @@ void Scheduler::run()
 	{
 		task.reset();
 		bool tickle_me = false;
-		
-		if(m_strategy == FCFS)
-		{
-			std::lock_guard<std::mutex> lock(m_mutex);
-			auto it = m_tasks.begin();
-			// 1 遍历任务队列
-			while(it!=m_tasks.end())
-			{
-				if(it->thread!=-1&&it->thread!=thread_id)
-				{
-					it++;
-					tickle_me = true;
-					continue;
-				}
-
-				// 2 取出任务
-				assert(it->fiber||it->cb);
-				task = *it;
-				m_tasks.erase(it); 
-				m_activeThreadCount++;
-				break;
-			}	
-			tickle_me = tickle_me || (it != m_tasks.end());
-		}
+		strategyConsume[FCFS](tickle_me, task, thread_id);
 
 		if(tickle_me)
 		{
@@ -231,6 +252,7 @@ void Scheduler::stop()
 
 void Scheduler::tickle()
 {
+	std::cout << "tickle执行" << std::endl;
 }
 
 // 休眠 1s 以释放CPU资源，然后执行yield让调度协程查看有没有新的任务
