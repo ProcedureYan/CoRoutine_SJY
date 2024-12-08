@@ -9,6 +9,7 @@
 #include <ucontext.h>   
 #include <unistd.h>
 #include <mutex>
+#include <vector>
 
 namespace sylar {
 
@@ -73,6 +74,7 @@ private:
 	std::function<void()> m_cb;
 	// 是否让出执行权交给调度协程
 	bool m_runInScheduler;
+	
 
 public:
 	std::mutex m_mutex;
